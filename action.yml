@@ -1,0 +1,87 @@
+name: 'Deployment pusher'
+description: 'Updates the deployment file in another repository, using GitHub App authentication'
+inputs:
+  repo-url:
+    description: 'The GitHub repository URL to update'
+    required: true
+  environment:
+    description: 'The deployment environment (e.g., staging or production)'
+    required: true
+  namespace:
+    description: 'The Kubernetes namespace for the app'
+    required: true
+  app-name:
+    description: 'The name of the application'
+    required: true
+  github-app-id:
+    description: 'The GitHub App ID'
+    required: true
+  github-app-private-key:
+    description: 'The GitHub App private key. Ensure to handle with care and use secrets'
+    required: true
+  installation-id:
+    description: 'The Installation ID for the GitHub App on the target repository'
+    required: true
+  deployment-file:
+    description: 'The path to the deployment file to update'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Update Deployment File
+      shell: bash
+      run: |
+        #!/bin/bash
+        set -e
+
+        # Convert GitHub App private key from base64 to PEM format
+        GITHUB_APP_PRIVATE_KEY=$(echo "${{ inputs['github-app-private-key'] }}" | base64 --decode)
+
+        # Function to generate JWT
+        generate_jwt() {
+            local app_id=$1
+            local now=$(date +%s)
+            local iat=$((${now} - 60))
+            local exp=$((${now} + 600))
+            local header='{"typ":"JWT","alg":"RS256"}'
+            local payload="{\"iat\":${iat},\"exp\":${exp},\"iss\":\"${app_id}\"}"
+
+            local signed_header=$(echo -n "${header}" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+            local signed_payload=$(echo -n "${payload}" | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+            local signature=$(echo -n "${signed_header}.${signed_payload}" | openssl dgst -sha256 -sign <(echo "${GITHUB_APP_PRIVATE_KEY}") | openssl base64 -e -A | tr '+/' '-_' | tr -d '=')
+
+            echo "${signed_header}.${signed_payload}.${signature}"
+        }
+
+        # Generate JWT
+        JWT=$(generate_jwt "${{ inputs['github-app-id'] }}")
+
+        # Fetch installation access token
+        INSTALLATION_TOKEN=$(curl -X POST -H "Authorization: Bearer ${JWT}" -H "Accept: application/vnd.github+json" "https://api.github.com/app/installations/${{ inputs['installation-id'] }}/access_tokens" | jq -r '.token')
+
+        # Setup git to use the installation token
+        git config --global user.email "sp+deployment-pusher@likvido.com"
+        git config --global user.name "Likvido Deployment Pusher"
+        git config --global http.https://github.com/.extraheader "Authorization: Bearer ${INSTALLATION_TOKEN}"
+
+        # Clone the repo
+        REPO_NAME=$(basename "${{ inputs['repo-url'] }}" .git)
+        git clone "${{ inputs['repo-url'] }}" "${REPO_NAME}"
+        cd "${REPO_NAME}"
+
+        # Define the file path in the target repo
+        TARGET_FILE_PATH="${{ inputs.environment }}/apps/${{ inputs.namespace }}/${{ inputs['app-name'] }}/deployment.yaml"
+
+        # Ensure the target directory exists
+        mkdir -p $(dirname "${TARGET_FILE_PATH}")
+
+        # Copy the updated deployment file to the target location
+        cp "${{ inputs['deployment-file'] }}" "${TARGET_FILE_PATH}"
+
+        # Commit and push the changes
+        git add "${TARGET_FILE_PATH}"
+        git commit -m "Update deployment file for ${{ inputs['app-name'] }} in ${{ inputs.environment }} environment"
+        git push
+
+        echo "Deployment file updated successfully"
