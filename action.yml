@@ -110,6 +110,6 @@ runs:
         git commit -m "Update deployment file for ${{ inputs['app-name'] }} in ${{ inputs.environment }} environment"
 
         # Use the retry function for the push operation with up to 5 attempts
-        push_with_retries 5
+        push_with_retries 20
 
         echo "Deployment file updated successfully"
