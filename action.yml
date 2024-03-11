@@ -35,8 +35,31 @@ runs:
         #!/bin/bash
         set -e
 
-        # Convert GitHub App private key from base64 to PEM format
-        GITHUB_APP_PRIVATE_KEY=$(echo "${{ inputs['github-app-private-key'] }}" | base64 --decode)
+        # Function to pull latest changes, rebase, and push, with retry logic and random delay
+        push_with_retries() {
+          local max_attempts=${1:-5}
+          local attempt=1
+          while true; do
+            echo "Attempt $attempt of $max_attempts"
+            # Fetch the latest changes from the remote and rebase
+            git fetch origin main && git rebase origin/main
+            if git push; then
+              echo "Push successful."
+              break
+            else
+              if [[ $attempt -lt $max_attempts ]]; then
+                # Generate a random delay between 1 and 10 seconds
+                local delay=$((1 + $RANDOM % 10))
+                echo "Push failed, retrying in $delay seconds..."
+                sleep $delay
+                ((attempt++))
+              else
+                echo "Push failed after $max_attempts attempts, giving up."
+                return 1
+              fi
+            fi
+          done
+        }
 
         # Function to generate JWT
         generate_jwt() {
@@ -53,6 +76,9 @@ runs:
 
             echo "${signed_header}.${signed_payload}.${signature}"
         }
+
+        # Convert GitHub App private key from base64 to PEM format
+        GITHUB_APP_PRIVATE_KEY=$(echo "${{ inputs['github-app-private-key'] }}" | base64 --decode)
 
         # Generate JWT
         JWT=$(generate_jwt "${{ inputs['github-app-id'] }}")
@@ -82,6 +108,8 @@ runs:
         # Commit and push the changes
         git add "${TARGET_FILE_PATH}"
         git commit -m "Update deployment file for ${{ inputs['app-name'] }} in ${{ inputs.environment }} environment"
-        git push
+
+        # Use the retry function for the push operation with up to 5 attempts
+        push_with_retries 5
 
         echo "Deployment file updated successfully"
