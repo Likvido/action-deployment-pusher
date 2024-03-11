@@ -77,7 +77,7 @@ runs:
         mkdir -p $(dirname "${TARGET_FILE_PATH}")
 
         # Copy the updated deployment file to the target location
-        cp "${{ inputs['deployment-file'] }}" "${TARGET_FILE_PATH}"
+        cp "../${{ inputs['deployment-file'] }}" "${TARGET_FILE_PATH}"
 
         # Commit and push the changes
         git add "${TARGET_FILE_PATH}"
