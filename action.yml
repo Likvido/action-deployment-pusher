@@ -65,6 +65,7 @@ runs:
         git config --global user.name "Likvido Deployment Pusher"
 
         # Clone the repo
+        REPO_URL="${{ inputs['repo-url'] }}"
         REPO_NAME=$(basename "${{ inputs['repo-url'] }}" .git)
         git clone https://x-access-token:${INSTALLATION_TOKEN}@${REPO_URL#https://} "${REPO_NAME}"
         cd "${REPO_NAME}"
