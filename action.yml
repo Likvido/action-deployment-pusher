@@ -60,22 +60,13 @@ runs:
         # Fetch installation access token
         INSTALLATION_TOKEN=$(curl -X POST -H "Authorization: Bearer ${JWT}" -H "Accept: application/vnd.github+json" "https://api.github.com/app/installations/${{ inputs['installation-id'] }}/access_tokens" | jq -r '.token')
 
-
-        # TEMP DEBUG STEPS
-        echo "GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY}"
-        echo "JWT: ${JWT}"
-        echo "Installation Token: ${INSTALLATION_TOKEN}"
-
-
-
         # Setup git to use the installation token
         git config --global user.email "sp+deployment-pusher@likvido.com"
         git config --global user.name "Likvido Deployment Pusher"
-        git config --global http.https://github.com/.extraheader "Authorization: Bearer ${INSTALLATION_TOKEN}"
 
         # Clone the repo
         REPO_NAME=$(basename "${{ inputs['repo-url'] }}" .git)
-        git clone "${{ inputs['repo-url'] }}" "${REPO_NAME}"
+        git clone https://x-access-token:${INSTALLATION_TOKEN}@${REPO_URL#https://} "${REPO_NAME}"
         cd "${REPO_NAME}"
 
         # Define the file path in the target repo
