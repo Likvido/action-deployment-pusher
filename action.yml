@@ -13,6 +13,9 @@ inputs:
   app-name:
     description: 'The name of the application'
     required: true
+  new-image-name:
+    description: 'The new image name and tag to update in the deployment'
+    required: true
   github-app-id:
     description: 'The GitHub App ID'
     required: true
@@ -21,9 +24,6 @@ inputs:
     required: true
   installation-id:
     description: 'The Installation ID for the GitHub App on the target repository'
-    required: true
-  deployment-file:
-    description: 'The path to the deployment file to update'
     required: true
 
 runs:
@@ -96,20 +96,37 @@ runs:
         git clone https://x-access-token:${INSTALLATION_TOKEN}@${REPO_URL#https://} "${REPO_NAME}"
         cd "${REPO_NAME}"
 
-        # Define the file path in the target repo
-        TARGET_FILE_PATH="${{ inputs.environment }}/apps/${{ inputs.namespace }}/${{ inputs['app-name'] }}/deployment.yaml"
+        # Define the directory path
+        DEPLOYMENT_DIR_PATH="${{ inputs.environment }}/apps/${{ inputs.namespace }}/${{ inputs['app-name'] }}"
 
-        # Ensure the target directory exists
-        mkdir -p $(dirname "${TARGET_FILE_PATH}")
+        # Ensure the directory exists
+        mkdir -p "$DEPLOYMENT_DIR_PATH"
 
-        # Copy the updated deployment file to the target location
-        cp "../${{ inputs['deployment-file'] }}" "${TARGET_FILE_PATH}"
+        # Define the file path in the target repo for the deployment and cronjob
+        DEPLOYMENT_FILE_PATH="$DEPLOYMENT_DIR_PATH/deployment.yaml"
+        PLACEHOLDER_FILE_PATH="$DEPLOYMENT_DIR_PATH/add-deployment-here.txt"
+        CRONJOB_FILE_PATH="$DEPLOYMENT_DIR_PATH/fake-cronjob.yaml"
+
+        if [[ -f "$DEPLOYMENT_FILE_PATH" ]]; then
+          # Update the image tag in the deployment file
+          yq e -i '.spec.template.spec.containers[0].image = "${{ inputs['new-image-name'] }}"' "$DEPLOYMENT_FILE_PATH"
+          git add "$DEPLOYMENT_FILE_PATH"
+        else
+          # Update or create add-deployment-here.txt with the new image name
+          echo "${{ inputs['new-image-name'] }}" > "$PLACEHOLDER_FILE_PATH"
+          # Add the placeholder file
+          git add "$PLACEHOLDER_FILE_PATH"
+        fi
+
+        # Check if the fake-cronjob.yaml exists and update it
+        if [[ -f "$CRONJOB_FILE_PATH" ]]; then
+          # For simplicity, we update an annotation with the new image name which will trigger ArgoCD sync.
+          yq e -i '.metadata.annotations."app.likvido.com/last-updated-image" = "${{ inputs['new-image-name'] }}"' "$CRONJOB_FILE_PATH"
+          git add "$CRONJOB_FILE_PATH"
+        fi
 
         # Commit and push the changes
-        git add "${TARGET_FILE_PATH}"
-        git commit -m "Update deployment file for ${{ inputs['app-name'] }} in ${{ inputs.environment }} environment"
-
-        # Use the retry function for the push operation with up to 5 attempts
+        git commit -m "Update ${inputs['app-name']} in the ${{ inputs.environment }} environment to ${{ inputs['new-image-name'] }}"
         push_with_retries 20
 
         echo "Deployment file updated successfully"
