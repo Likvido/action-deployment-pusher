@@ -108,8 +108,20 @@ runs:
         CRONJOB_FILE_PATH="$DEPLOYMENT_DIR_PATH/fake-cronjob.yaml"
 
         if [[ -f "$DEPLOYMENT_FILE_PATH" ]]; then
-          # Update the image tag in the deployment file
-          yq e -i '.spec.template.spec.containers[0].image = "${{ inputs['new-image-name'] }}"' "$DEPLOYMENT_FILE_PATH"
+          # Check the kind of Kubernetes resource to determine the correct path for the image
+          KIND=$(yq e '.kind' "$DEPLOYMENT_FILE_PATH")
+
+          if [[ "$KIND" == "CronJob" ]]; then
+            # Update image tag for CronJob
+            yq e -i '.spec.jobTemplate.spec.template.spec.containers[0].image = "${{ inputs['new-image-name'] }}"' "$DEPLOYMENT_FILE_PATH"
+          elif [[ "$KIND" == "Deployment" ]] || [[ "$KIND" == "Job" ]]; then
+            # Update image tag for Deployment or Job
+            yq e -i '.spec.template.spec.containers[0].image = "${{ inputs['new-image-name'] }}"' "$DEPLOYMENT_FILE_PATH"
+          else
+            echo "Unsupported Kubernetes resource type: $KIND"
+            exit 1
+          fi
+
           git add "$DEPLOYMENT_FILE_PATH"
         else
           # Update or create add-deployment-here.txt with the new image name
