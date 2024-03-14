@@ -113,13 +113,13 @@ runs:
           echo "Updating image tags in $DEPLOYMENT_FILE_PATH to: ${{ inputs['new-image-name'] }}"
           yq eval-all -i '
             if .kind == "CronJob" then
-              .spec.jobTemplate.spec.template.spec.containers[0].image = strenv(NEW_IMAGE_NAME)
+              .spec.jobTemplate.spec.template.spec.containers[0].image = "${{ inputs['new-image-name'] }}"
             elif .kind == "Deployment" or .kind == "Job" then
-              .spec.template.spec.containers[0].image = strenv(NEW_IMAGE_NAME)
+              .spec.template.spec.containers[0].image = "${{ inputs['new-image-name'] }}"
             else
               .
             end
-          ' --with-env NEW_IMAGE_NAME="${{ inputs['new-image-name'] }}" "$DEPLOYMENT_FILE_PATH"
+          ' "$DEPLOYMENT_FILE_PATH"
 
           git add "$DEPLOYMENT_FILE_PATH"
         else
