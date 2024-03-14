@@ -133,9 +133,6 @@ runs:
               yq eval "(select(document_index == $doc_index) | .spec.template.spec.containers[0].image) = \"${{ inputs['new-image-name'] }}\"" "$DEPLOYMENT_FILE_PATH" > "$temp_file"
               mv "$temp_file" "$DEPLOYMENT_FILE_PATH"
             fi
-
-            echo "Contents are now:"
-            cat "$DEPLOYMENT_FILE_PATH"
           done
 
           git add "$DEPLOYMENT_FILE_PATH"
