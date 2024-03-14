@@ -35,6 +35,35 @@ runs:
         #!/bin/bash
         set -e
 
+        # Function for cloning with retries
+        clone_with_retries() {
+          local repo_url=$1
+          local repo_name=$2
+          local max_attempts=5
+          local attempt=1
+          local delay=5
+          
+          while true; do
+            echo "Attempt $attempt of $max_attempts: Cloning $repo_url"
+            
+            # Attempt to clone the repository
+            if git clone https://x-access-token:${INSTALLATION_TOKEN}@${repo_url#https://} "$repo_name"; then
+              echo "Clone successful."
+              break
+            else
+              if [[ $attempt -lt $max_attempts ]]; then
+                echo "Clone failed, retrying in $delay seconds..."
+                sleep $delay
+                ((attempt++))
+                delay=$((delay * 2))  # Exponential backoff
+              else
+                echo "Clone failed after $max_attempts attempts, giving up."
+                return 1
+              fi
+            fi
+          done
+        }
+
         # Function to pull latest changes, rebase, and push, with retry logic and random delay
         push_with_retries() {
           local max_attempts=${1:-5}
@@ -93,7 +122,7 @@ runs:
         # Clone the repo
         REPO_URL="${{ inputs['repo-url'] }}"
         REPO_NAME=$(basename "${{ inputs['repo-url'] }}" .git)
-        git clone https://x-access-token:${INSTALLATION_TOKEN}@${REPO_URL#https://} "${REPO_NAME}"
+        clone_with_retries "$REPO_URL" "$REPO_NAME"
         cd "${REPO_NAME}"
 
         # Define the directory path
