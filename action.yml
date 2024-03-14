@@ -114,21 +114,48 @@ runs:
           # Update all CronJobs, Deployments, and Jobs in the deployment.yaml file
           echo "Updating image tags in $DEPLOYMENT_FILE_PATH to: $NEW_IMAGE_NAME"
 
-          # Get the number of documents in the YAML file
-          doc_count=$(yq eval 'length' "$DEPLOYMENT_FILE_PATH")
+          # Temporary file to hold intermediate results
+          temp_file=$(mktemp)
 
-          # Iterate over each document
-          for ((i = 0 ; i < doc_count ; i++)); do
-            # Get the kind of the current document
-            kind=$(yq eval ".[$i].kind" "$DEPLOYMENT_FILE_PATH")
-            
-            # Determine the correct path based on the kind
-            if [[ "$kind" == "CronJob" ]]; then
-              yq eval -i ".[$i].spec.jobTemplate.spec.template.spec.containers[0].image = \"$NEW_IMAGE_NAME\"" "$DEPLOYMENT_FILE_PATH"
-            elif [[ "$kind" == "Deployment" ]] || [[ "$kind" == "Job" ]]; then
-              yq eval -i ".[$i].spec.template.spec.containers[0].image = \"$NEW_IMAGE_NAME\"" "$DEPLOYMENT_FILE_PATH"
+          # Attempt to update each document in the YAML file
+          doc_index=0
+          while true; do
+            # Extract the kind for the current document, if any
+            kind=$(yq eval "select(documentIndex == $doc_index) | .kind" "$DEPLOYMENT_FILE_PATH")
+
+            # Break the loop if there are no more documents
+            if [[ -z "$kind" ]]; then
+              break
             fi
+
+            # Ensure document separator for all but the first document
+            if [[ $doc_index -ne 0 ]]; then
+              echo '---' >> "$temp_file"
+            fi
+
+            # Update the image based on the kind
+            if [[ "$kind" == "CronJob" ]]; then
+              yq eval "select(documentIndex == $doc_index) | .spec.jobTemplate.spec.template.spec.containers[0].image = \"$NEW_IMAGE_NAME\"" "$DEPLOYMENT_FILE_PATH" >> "$temp_file"
+            elif [[ "$kind" == "Deployment" ]] || [[ "$kind" == "Job" ]]; then
+              yq eval "select(documentIndex == $doc_index) | .spec.template.spec.containers[0].image = \"$NEW_IMAGE_NAME\"" "$DEPLOYMENT_FILE_PATH" >> "$temp_file"
+            else
+              # If the document is not a kind we want to modify, simply append it to the temp file as is
+              yq eval "select(documentIndex == $doc_index)" "$DEPLOYMENT_FILE_PATH" >> "$temp_file"
+            fi
+
+            # Prepare for the next iteration
+            ((doc_index++))
           done
+
+          # Overwrite the original file with updated content from the temp file if changes were made
+          if [ -s "$temp_file" ]; then
+              mv "$temp_file" "$DEPLOYMENT_FILE_PATH"
+          else
+              echo "No changes were made."
+          fi
+
+          # Clean up the temporary file, if it still exists
+          rm -f "$temp_file"
 
           git add "$DEPLOYMENT_FILE_PATH"
         else
