@@ -26,6 +26,10 @@ inputs:
     description: 'The Installation ID for the GitHub App on the target repository'
     required: true
 
+  deployment-file:
+    description: 'If you want to control which deployment file to update, you can point to the file here. This should be the path to the deployment file in the GitOps repo'
+    required: false
+
 runs:
   using: 'composite'
   steps:
@@ -125,17 +129,30 @@ runs:
         clone_with_retries "$REPO_URL" "$REPO_NAME"
         cd "${REPO_NAME}"
 
-        # Define the directory path
-        DEPLOYMENT_DIR_PATH="${{ inputs.environment }}/apps/${{ inputs.namespace }}/${{ inputs['app-name'] }}"
-        echo "The deployment path is: $DEPLOYMENT_DIR_PATH"
+        # Check if the deployment-file input has a value
+        if [[ -n "${{ inputs['deployment-file'] }}" ]]; then
+          # Use the provided deployment file path
+          DEPLOYMENT_FILE_PATH="${{ inputs['deployment-file'] }}"
+          echo "Using provided deployment file path: $DEPLOYMENT_FILE_PATH"
 
-        # Ensure the directory exists
-        mkdir -p "$DEPLOYMENT_DIR_PATH"
+          # Check if the specified deployment file exists
+          if [[ ! -f "$DEPLOYMENT_FILE_PATH" ]]; then
+            echo "Error: The specified deployment file does not exist in the repository."
+            exit 1  # Exit with an error status
+          fi
+        else
+          # Define the directory path
+          DEPLOYMENT_DIR_PATH="${{ inputs.environment }}/apps/${{ inputs.namespace }}/${{ inputs['app-name'] }}"
+          echo "The deployment path is: $DEPLOYMENT_DIR_PATH"
 
-        # Define the file path in the target repo for the deployment and cronjob
-        DEPLOYMENT_FILE_PATH="$DEPLOYMENT_DIR_PATH/deployment.yaml"
-        PLACEHOLDER_FILE_PATH="$DEPLOYMENT_DIR_PATH/add-deployment-here.txt"
-        CRONJOB_FILE_PATH="$DEPLOYMENT_DIR_PATH/fake-cronjob.yaml"
+          # Ensure the directory exists
+          mkdir -p "$DEPLOYMENT_DIR_PATH"
+
+          # Define the file path in the target repo for the deployment and cronjob
+          DEPLOYMENT_FILE_PATH="$DEPLOYMENT_DIR_PATH/deployment.yaml"
+          PLACEHOLDER_FILE_PATH="$DEPLOYMENT_DIR_PATH/add-deployment-here.txt"
+          CRONJOB_FILE_PATH="$DEPLOYMENT_DIR_PATH/fake-cronjob.yaml"
+        fi
 
         if [[ -f "$DEPLOYMENT_FILE_PATH" ]]; then
           # Use yq document_index to get the index of each document and determine the count
@@ -173,12 +190,15 @@ runs:
           git add "$PLACEHOLDER_FILE_PATH"
         fi
 
-        # Check if the fake-cronjob.yaml exists and update it
-        if [[ -f "$CRONJOB_FILE_PATH" ]]; then
-          # For simplicity, we update an annotation with the new image name which will trigger ArgoCD sync.
-          echo "Updating annotation in fake cron job at: $CRONJOB_FILE_PATH"
-          yq e -i '.metadata.annotations."app.likvido.com/last-updated-image" = "${{ inputs['new-image-name'] }}"' "$CRONJOB_FILE_PATH"
-          git add "$CRONJOB_FILE_PATH"
+        # Check if the CRONJOB_FILE_PATH variable has been set
+        if [[ -n "$CRONJOB_FILE_PATH" ]]; then
+          # Then check if the fake-cronjob.yaml exists
+          if [[ -f "$CRONJOB_FILE_PATH" ]]; then
+            # For simplicity, we update an annotation with the new image name which will trigger ArgoCD sync.
+            echo "Updating annotation in fake cron job at: $CRONJOB_FILE_PATH"
+            yq e -i '.metadata.annotations."app.likvido.com/last-updated-image" = "${{ inputs['new-image-name'] }}"' "$CRONJOB_FILE_PATH"
+            git add "$CRONJOB_FILE_PATH"
+          fi
         fi
 
         # Commit and push the changes

@@ -10,10 +10,11 @@ The **Deployment Pusher** GitHub Action updates a deployment file in another rep
 - `environment`: The deployment environment (e.g., staging or production). (**Required**)
 - `namespace`: The Kubernetes namespace for the app. (**Required**)
 - `app-name`: The name of the application. (**Required**)
+- `new-image-name`: The name of the new image. This is the name we will insert in the deployment file. (**Required**)
 - `github-app-id`: The GitHub App ID. (**Required**)
 - `github-app-private-key`: The GitHub App private key. Ensure to handle with care and use secrets. (**Required**)
 - `installation-id`: The Installation ID for the GitHub App on the target repository. (**Required**)
-- `deployment-file`: The path to the deployment file to push. (**Required**)
+- `deployment-file`: The path to the deployment file to update in the GitOps repo. If this is not specified, then we will calculate the path. (**Optional**)
 
 ## Usage
 
@@ -25,12 +26,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Push Deployment Update
-        uses: likvido/action-deployment-pusher@v2
+        uses: likvido/action-deployment-pusher@v2.1
         with:
           repo-url: 'https://github.com/target-repository-owner/target-repository'
           environment: 'production'
           namespace: 'my-namespace'
           app-name: 'example-app'
+          new-image-name: 'my-image-name'
           github-app-id: ${{ secrets.GITHUB_APP_ID }}
           github-app-private-key: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
           installation-id: ${{ secrets.INSTALLATION_ID }}
