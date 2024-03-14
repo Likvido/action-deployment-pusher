@@ -113,15 +113,22 @@ runs:
         if [[ -f "$DEPLOYMENT_FILE_PATH" ]]; then
           # Update all CronJobs, Deployments, and Jobs in the deployment.yaml file
           echo "Updating image tags in $DEPLOYMENT_FILE_PATH to: $NEW_IMAGE_NAME"
-          yq eval-all -i '
-            if .kind == "CronJob" then
-              .spec.jobTemplate.spec.template.spec.containers[0].image = env(NEW_IMAGE_NAME)
-            elif .kind == "Deployment" or .kind == "Job" then
-              .spec.template.spec.containers[0].image = env(NEW_IMAGE_NAME)
-            else
-              .
-            end
-          ' "$DEPLOYMENT_FILE_PATH"
+
+          # Get the number of documents in the YAML file
+          doc_count=$(yq eval 'length' "$DEPLOYMENT_FILE_PATH")
+
+          # Iterate over each document
+          for ((i = 0 ; i < doc_count ; i++)); do
+            # Get the kind of the current document
+            kind=$(yq eval ".[$i].kind" "$DEPLOYMENT_FILE_PATH")
+            
+            # Determine the correct path based on the kind
+            if [[ "$kind" == "CronJob" ]]; then
+              yq eval -i ".[$i].spec.jobTemplate.spec.template.spec.containers[0].image = \"$NEW_IMAGE_NAME\"" "$DEPLOYMENT_FILE_PATH"
+            elif [[ "$kind" == "Deployment" ]] || [[ "$kind" == "Job" ]]; then
+              yq eval -i ".[$i].spec.template.spec.containers[0].image = \"$NEW_IMAGE_NAME\"" "$DEPLOYMENT_FILE_PATH"
+            fi
+          done
 
           git add "$DEPLOYMENT_FILE_PATH"
         else
