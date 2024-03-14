@@ -109,6 +109,9 @@ runs:
         CRONJOB_FILE_PATH="$DEPLOYMENT_DIR_PATH/fake-cronjob.yaml"
 
         if [[ -f "$DEPLOYMENT_FILE_PATH" ]]; then
+          # Temporary file to hold the output
+          temp_file=$(mktemp)
+
           # Use yq document_index to get the index of each document and determine the count
           last_index=$(yq document_index "$DEPLOYMENT_FILE_PATH" | tail -n1)
           # Add 1 to convert the last index into the count of documents
@@ -118,14 +121,17 @@ runs:
           # Loop through each document and update the image if the kind matches
           for ((doc_index=0; doc_index<doc_count; doc_index++)); do
               kind=$(yq eval "select(document_index == $doc_index) | .kind" "$DEPLOYMENT_FILE_PATH")
-              echo "Document $(doc_index + 1) is a $kind"
+              echo "Document $((doc_index + 1)) is a $kind"
+
               # Depending on the kind, update the image field
               if [[ "$kind" == "CronJob" ]]; then
                 echo "Updating image tag for cron job to: ${{ inputs['new-image-name'] }}"
-                yq eval "(select(document_index == $doc_index) | .spec.jobTemplate.spec.template.spec.containers[0].image) = \"${{ inputs['new-image-name'] }}\"" "$DEPLOYMENT_FILE_PATH" > "$DEPLOYMENT_FILE_PATH"
+                yq eval "(select(document_index == $doc_index) | .spec.jobTemplate.spec.template.spec.containers[0].image) = \"${{ inputs['new-image-name'] }}\"" "$DEPLOYMENT_FILE_PATH" > "$temp_file"
+                mv "$temp_file" "$DEPLOYMENT_FILE_PATH"
               elif [[ "$kind" == "Deployment" ]] || [[ "$kind" == "Job" ]]; then
                 echo "Updating image tag for job or deployment to: ${{ inputs['new-image-name'] }}"
-                yq eval "(select(document_index == $doc_index) | .spec.template.spec.containers[0].image) = \"${{ inputs['new-image-name'] }}\"" "$DEPLOYMENT_FILE_PATH" > "$DEPLOYMENT_FILE_PATH"
+                yq eval "(select(document_index == $doc_index) | .spec.template.spec.containers[0].image) = \"${{ inputs['new-image-name'] }}\"" "$DEPLOYMENT_FILE_PATH" > "$temp_file"
+                mv "$temp_file" "$DEPLOYMENT_FILE_PATH"
               fi
           done
 
