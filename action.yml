@@ -98,6 +98,7 @@ runs:
 
         # Define the directory path
         DEPLOYMENT_DIR_PATH="${{ inputs.environment }}/apps/${{ inputs.namespace }}/${{ inputs['app-name'] }}"
+        echo "The deployment path is: $DEPLOYMENT_DIR_PATH"
 
         # Ensure the directory exists
         mkdir -p "$DEPLOYMENT_DIR_PATH"
@@ -113,9 +114,11 @@ runs:
 
           if [[ "$KIND" == "CronJob" ]]; then
             # Update image tag for CronJob
+            echo "Updating image tag for cron job to: ${{ inputs['new-image-name'] }}"
             yq e -i '.spec.jobTemplate.spec.template.spec.containers[0].image = "${{ inputs['new-image-name'] }}"' "$DEPLOYMENT_FILE_PATH"
           elif [[ "$KIND" == "Deployment" ]] || [[ "$KIND" == "Job" ]]; then
             # Update image tag for Deployment or Job
+            echo "Updating image tag for job or deployment to: ${{ inputs['new-image-name'] }}"
             yq e -i '.spec.template.spec.containers[0].image = "${{ inputs['new-image-name'] }}"' "$DEPLOYMENT_FILE_PATH"
           else
             echo "Unsupported Kubernetes resource type: $KIND"
@@ -125,6 +128,7 @@ runs:
           git add "$DEPLOYMENT_FILE_PATH"
         else
           # Update or create add-deployment-here.txt with the new image name
+          echo "Adding placeholder file at: $PLACEHOLDER_FILE_PATH"
           echo "${{ inputs['new-image-name'] }}" > "$PLACEHOLDER_FILE_PATH"
           # Add the placeholder file
           git add "$PLACEHOLDER_FILE_PATH"
@@ -133,12 +137,13 @@ runs:
         # Check if the fake-cronjob.yaml exists and update it
         if [[ -f "$CRONJOB_FILE_PATH" ]]; then
           # For simplicity, we update an annotation with the new image name which will trigger ArgoCD sync.
+          echo "Updating annotation in fake cron job at: $CRONJOB_FILE_PATH"
           yq e -i '.metadata.annotations."app.likvido.com/last-updated-image" = "${{ inputs['new-image-name'] }}"' "$CRONJOB_FILE_PATH"
           git add "$CRONJOB_FILE_PATH"
         fi
 
         # Commit and push the changes
-        git commit -m "Update ${inputs['app-name']} in the ${{ inputs.environment }} environment to ${{ inputs['new-image-name'] }}"
+        git commit -m "Update ${{ inputs['app-name'] }} in the ${{ inputs.environment }} environment to ${{ inputs['new-image-name'] }}"
         push_with_retries 20
 
         echo "Deployment file updated successfully"
