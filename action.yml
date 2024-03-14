@@ -116,17 +116,13 @@ runs:
           echo "Updating image tags in $DEPLOYMENT_FILE_PATH to: $NEW_IMAGE_NAME"
 
           temp_file=$(mktemp)
+          error_file=$(mktemp)  # Temporary file for capturing errors
           doc_index=0
-          while true; do
-            kind=$(yq eval "select(documentIndex == $doc_index) | .kind" "$DEPLOYMENT_FILE_PATH" 2>&1)
-            ret_val=$?
-            if [[ $ret_val -ne 0 ]]; then
-              echo "Failed to extract kind from document at index $doc_index. yq returned $ret_val"
-              break
-            fi
-
-            if [[ -z "$kind" ]]; then
-              echo "No more documents found. Exiting loop."
+          while : ; do
+            kind=$(yq eval "select(documentIndex == $doc_index) | .kind" "$DEPLOYMENT_FILE_PATH" 2>$error_file)
+            if [[ $? -ne 0 || -z "$kind" ]]; then
+              echo "Finished processing documents or encountered an error."
+              cat $error_file  # Display any errors captured
               break
             fi
 
@@ -135,18 +131,21 @@ runs:
             fi
 
             if [[ "$kind" == "CronJob" ]]; then
-              command="yq eval \"select(documentIndex == $doc_index) | .spec.jobTemplate.spec.template.spec.containers[0].image = \\\"$NEW_IMAGE_NAME\\\"\" \"$DEPLOYMENT_FILE_PATH\" >> \"$temp_file\""
-              eval $command
+              yq eval "select(documentIndex == $doc_index) | .spec.jobTemplate.spec.template.spec.containers[0].image = \"$NEW_IMAGE_NAME\"" "$DEPLOYMENT_FILE_PATH" >> "$temp_file" 2>$error_file
             elif [[ "$kind" == "Deployment" ]] || [[ "$kind" == "Job" ]]; then
-              command="yq eval \"select(documentIndex == $doc_index) | .spec.template.spec.containers[0].image = \\\"$NEW_IMAGE_NAME\\\"\" \"$DEPLOYMENT_FILE_PATH\" >> \"$temp_file\""
-              eval $command
-            else
-              command="yq eval \"select(documentIndex == $doc_index)\" \"$DEPLOYMENT_FILE_PATH\" >> \"$temp_file\""
-              eval $command
+              yq eval "select(documentIndex == $doc_index) | .spec.template.spec.containers[0].image = \"$NEW_IMAGE_NAME\"" "$DEPLOYMENT_FILE_PATH" >> "$temp_file" 2>$error_file
+            fi
+
+            if [[ $? -ne 0 ]]; then
+              echo "Error updating document at index $doc_index:"
+              cat $error_file  # Display error messages
+              break
             fi
 
             ((doc_index++))
           done
+
+          rm -f $error_file  # Clean up the error file
 
           if [ -s "$temp_file" ]; then
             mv "$temp_file" "$DEPLOYMENT_FILE_PATH"
