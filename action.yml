@@ -31,6 +31,8 @@ runs:
   steps:
     - name: Update Deployment File
       shell: bash
+      env:
+        NEW_IMAGE_NAME: ${{ inputs['new-image-name'] }}
       run: |
         #!/bin/bash
         set -e
@@ -110,12 +112,12 @@ runs:
 
         if [[ -f "$DEPLOYMENT_FILE_PATH" ]]; then
           # Update all CronJobs, Deployments, and Jobs in the deployment.yaml file
-          echo "Updating image tags in $DEPLOYMENT_FILE_PATH to: ${{ inputs['new-image-name'] }}"
+          echo "Updating image tags in $DEPLOYMENT_FILE_PATH to: $NEW_IMAGE_NAME"
           yq eval-all -i '
             if .kind == "CronJob" then
-              .spec.jobTemplate.spec.template.spec.containers[0].image = "${{ inputs['new-image-name'] }}"
+              .spec.jobTemplate.spec.template.spec.containers[0].image = env(NEW_IMAGE_NAME)
             elif .kind == "Deployment" or .kind == "Job" then
-              .spec.template.spec.containers[0].image = "${{ inputs['new-image-name'] }}"
+              .spec.template.spec.containers[0].image = env(NEW_IMAGE_NAME)
             else
               .
             end
@@ -125,7 +127,7 @@ runs:
         else
           # Update or create add-deployment-here.txt with the new image name
           echo "Adding placeholder file at: $PLACEHOLDER_FILE_PATH"
-          echo "${{ inputs['new-image-name'] }}" > "$PLACEHOLDER_FILE_PATH"
+          echo "$NEW_IMAGE_NAME" > "$PLACEHOLDER_FILE_PATH"
           # Add the placeholder file
           git add "$PLACEHOLDER_FILE_PATH"
         fi
@@ -134,12 +136,12 @@ runs:
         if [[ -f "$CRONJOB_FILE_PATH" ]]; then
           # For simplicity, we update an annotation with the new image name which will trigger ArgoCD sync.
           echo "Updating annotation in fake cron job at: $CRONJOB_FILE_PATH"
-          yq e -i '.metadata.annotations."app.likvido.com/last-updated-image" = "${{ inputs['new-image-name'] }}"' "$CRONJOB_FILE_PATH"
+          yq e -i '.metadata.annotations."app.likvido.com/last-updated-image" = "$NEW_IMAGE_NAME"' "$CRONJOB_FILE_PATH"
           git add "$CRONJOB_FILE_PATH"
         fi
 
         # Commit and push the changes
-        git commit -m "Update ${{ inputs['app-name'] }} in the ${{ inputs.environment }} environment to ${{ inputs['new-image-name'] }}"
+        git commit -m "Update ${{ inputs['app-name'] }} in the ${{ inputs.environment }} environment to $NEW_IMAGE_NAME"
         push_with_retries 20
 
         echo "Deployment file updated successfully"
