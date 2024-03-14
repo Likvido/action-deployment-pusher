@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Push Deployment Update
-        uses: likvido/action-deployment-pusher@v1
+        uses: likvido/action-deployment-pusher@v2
         with:
           repo-url: 'https://github.com/target-repository-owner/target-repository'
           environment: 'production'
