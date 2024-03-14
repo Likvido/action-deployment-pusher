@@ -31,12 +31,9 @@ runs:
   steps:
     - name: Update Deployment File
       shell: bash
-      env:
-        NEW_IMAGE_NAME: ${{ inputs['new-image-name'] }}
       run: |
         #!/bin/bash
         set -e
-        set -x  # Enable debugging
 
         # Function to pull latest changes, rebase, and push, with retry logic and random delay
         push_with_retries() {
@@ -112,54 +109,31 @@ runs:
         CRONJOB_FILE_PATH="$DEPLOYMENT_DIR_PATH/fake-cronjob.yaml"
 
         if [[ -f "$DEPLOYMENT_FILE_PATH" ]]; then
-          # Update all CronJobs, Deployments, and Jobs in the deployment.yaml file
-          echo "Updating image tags in $DEPLOYMENT_FILE_PATH to: $NEW_IMAGE_NAME"
+          # Use yq document_index to get the index of each document and determine the count
+          last_index=$(yq document_index "$DEPLOYMENT_FILE_PATH" | tail -n1)
+          # Add 1 to convert the last index into the count of documents
+          doc_count=$((last_index + 1))
+          echo "The file contains $doc_count documents"
 
-          temp_file=$(mktemp)
-          error_file=$(mktemp)  # Temporary file for capturing errors
-          doc_index=0
-          while : ; do
-            kind=$(yq eval "select(documentIndex == $doc_index) | .kind" "$DEPLOYMENT_FILE_PATH" 2>$error_file)
-            if [[ $? -ne 0 || -z "$kind" ]]; then
-              echo "Finished processing documents or encountered an error."
-              cat $error_file  # Display any errors captured
-              break
-            fi
-
-            if [[ $doc_index -ne 0 ]]; then
-              echo '---' >> "$temp_file"
-            fi
-
-            if [[ "$kind" == "CronJob" ]]; then
-              yq eval "select(documentIndex == $doc_index) | .spec.jobTemplate.spec.template.spec.containers[0].image = \"$NEW_IMAGE_NAME\"" "$DEPLOYMENT_FILE_PATH" >> "$temp_file" 2>$error_file
-            elif [[ "$kind" == "Deployment" ]] || [[ "$kind" == "Job" ]]; then
-              yq eval "select(documentIndex == $doc_index) | .spec.template.spec.containers[0].image = \"$NEW_IMAGE_NAME\"" "$DEPLOYMENT_FILE_PATH" >> "$temp_file" 2>$error_file
-            fi
-
-            if [[ $? -ne 0 ]]; then
-              echo "Error updating document at index $doc_index:"
-              cat $error_file  # Display error messages
-              break
-            fi
-
-            ((doc_index++))
+          # Loop through each document and update the image if the kind matches
+          for ((doc_index=0; doc_index<doc_count; doc_index++)); do
+              kind=$(yq eval "select(document_index == $doc_index) | .kind" "$DEPLOYMENT_FILE_PATH")
+              echo "Document $(doc_index + 1) is a $kind"
+              # Depending on the kind, update the image field
+              if [[ "$kind" == "CronJob" ]]; then
+                echo "Updating image tag for cron job to: ${{ inputs['new-image-name'] }}"
+                yq eval "(select(document_index == $doc_index) | .spec.jobTemplate.spec.template.spec.containers[0].image) = \"${{ inputs['new-image-name'] }}\"" "$DEPLOYMENT_FILE_PATH" > "$DEPLOYMENT_FILE_PATH"
+              elif [[ "$kind" == "Deployment" ]] || [[ "$kind" == "Job" ]]; then
+                echo "Updating image tag for job or deployment to: ${{ inputs['new-image-name'] }}"
+                yq eval "(select(document_index == $doc_index) | .spec.template.spec.containers[0].image) = \"${{ inputs['new-image-name'] }}\"" "$DEPLOYMENT_FILE_PATH" > "$DEPLOYMENT_FILE_PATH"
+              fi
           done
-
-          rm -f $error_file  # Clean up the error file
-
-          if [ -s "$temp_file" ]; then
-            mv "$temp_file" "$DEPLOYMENT_FILE_PATH"
-          else
-            echo "No changes were made."
-          fi
-
-          rm -f "$temp_file"
 
           git add "$DEPLOYMENT_FILE_PATH"
         else
           # Update or create add-deployment-here.txt with the new image name
           echo "Adding placeholder file at: $PLACEHOLDER_FILE_PATH"
-          echo "$NEW_IMAGE_NAME" > "$PLACEHOLDER_FILE_PATH"
+          echo "${{ inputs['new-image-name'] }}" > "$PLACEHOLDER_FILE_PATH"
           # Add the placeholder file
           git add "$PLACEHOLDER_FILE_PATH"
         fi
@@ -168,12 +142,12 @@ runs:
         if [[ -f "$CRONJOB_FILE_PATH" ]]; then
           # For simplicity, we update an annotation with the new image name which will trigger ArgoCD sync.
           echo "Updating annotation in fake cron job at: $CRONJOB_FILE_PATH"
-          yq e -i '.metadata.annotations."app.likvido.com/last-updated-image" = "$NEW_IMAGE_NAME"' "$CRONJOB_FILE_PATH"
+          yq e -i '.metadata.annotations."app.likvido.com/last-updated-image" = "${{ inputs['new-image-name'] }}"' "$CRONJOB_FILE_PATH"
           git add "$CRONJOB_FILE_PATH"
         fi
 
         # Commit and push the changes
-        git commit -m "Update ${{ inputs['app-name'] }} in the ${{ inputs.environment }} environment to $NEW_IMAGE_NAME"
+        git commit -m "Update ${{ inputs['app-name'] }} in the ${{ inputs.environment }} environment to ${{ inputs['new-image-name'] }}"
         push_with_retries 20
 
         echo "Deployment file updated successfully"
