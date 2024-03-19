@@ -85,10 +85,8 @@ runs:
         fetch_installation_token() {
             local jwt=$1
             local installation_id=$2
-
-            echo "Fetching installation access token for installation ID: ${installation_id}"
             local token_response=$(curl -X POST -H "Authorization: Bearer ${jwt}" -H "Accept: application/vnd.github+json" "https://api.github.com/app/installations/${installation_id}/access_tokens")
-            echo "Token response: ${token_response}"
+
             echo "${token_response}" | jq -r '.token'
         }
 
