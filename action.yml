@@ -117,23 +117,23 @@ runs:
               echo "Failed to obtain a valid installation token. Attempt $attempt of $max_attempts."
             else
               echo "Using installation token for clone attempt."
+              echo "git clone 'https://x-access-token:${INSTALLATION_TOKEN}@${repo_url#https://}' \"$repo_name\""
 
               # Attempt to clone the repository
-              if git clone https://x-access-token:${INSTALLATION_TOKEN}@${repo_url#https://} "$repo_name"; then
+              if git clone "https://x-access-token:${INSTALLATION_TOKEN}@${repo_url#https://}" "$repo_name"; then
                 echo "Clone successful."
                 break
               else
-                echo "Clone failed, retrying in $delay seconds..."
+                if [[ $attempt -lt $max_attempts ]]; then
+                  echo "Clone failed, retrying in $delay seconds..."
+                  sleep $delay
+                  ((attempt++))
+                  delay=$((delay * 2))  # Exponential backoff
+                else
+                  echo "Clone failed after $max_attempts attempts, giving up."
+                  return 1
+                fi
               fi
-            fi
-
-            if [[ $attempt -lt $max_attempts ]]; then
-              sleep $delay
-              ((attempt++))
-              delay=$((delay * 2))  # Exponential backoff
-            else
-              echo "Clone failed after $max_attempts attempts, giving up."
-              return 1
             fi
           done
         }
