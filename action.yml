@@ -39,35 +39,6 @@ runs:
         #!/bin/bash
         set -e
 
-        # Function for cloning with retries
-        clone_with_retries() {
-          local repo_url=$1
-          local repo_name=$2
-          local max_attempts=5
-          local attempt=1
-          local delay=5
-          
-          while true; do
-            echo "Attempt $attempt of $max_attempts: Cloning $repo_url"
-            
-            # Attempt to clone the repository
-            if git clone https://x-access-token:${INSTALLATION_TOKEN}@${repo_url#https://} "$repo_name"; then
-              echo "Clone successful."
-              break
-            else
-              if [[ $attempt -lt $max_attempts ]]; then
-                echo "Clone failed, retrying in $delay seconds..."
-                sleep $delay
-                ((attempt++))
-                delay=$((delay * 2))  # Exponential backoff
-              else
-                echo "Clone failed after $max_attempts attempts, giving up."
-                return 1
-              fi
-            fi
-          done
-        }
-
         # Function to pull latest changes, rebase, and push, with retry logic and random delay
         push_with_retries() {
           local max_attempts=${1:-5}
@@ -110,14 +81,62 @@ runs:
             echo "${signed_header}.${signed_payload}.${signature}"
         }
 
+        # Function to fetch installation access token
+        fetch_installation_token() {
+            local jwt=$1
+            local installation_id=$2
+
+            echo "Fetching installation access token for installation ID: ${installation_id}"
+            local token_response=$(curl -X POST -H "Authorization: Bearer ${jwt}" -H "Accept: application/vnd.github+json" "https://api.github.com/app/installations/${installation_id}/access_tokens")
+            echo "Token response: ${token_response}"
+            echo "${token_response}" | jq -r '.token'
+        }
+
         # Convert GitHub App private key from base64 to PEM format
         GITHUB_APP_PRIVATE_KEY=$(echo "${{ inputs['github-app-private-key'] }}" | base64 --decode)
 
-        # Generate JWT
-        JWT=$(generate_jwt "${{ inputs['github-app-id'] }}")
+        # Function for cloning with retries
+        clone_with_retries() {
+          local repo_url=$1
+          local repo_name=$2
+          local max_attempts=5
+          local attempt=1
+          local delay=5
 
-        # Fetch installation access token
-        INSTALLATION_TOKEN=$(curl -X POST -H "Authorization: Bearer ${JWT}" -H "Accept: application/vnd.github+json" "https://api.github.com/app/installations/${{ inputs['installation-id'] }}/access_tokens" | jq -r '.token')
+          # Generate JWT
+          local jwt=$(generate_jwt "${{ inputs['github-app-id'] }}")
+          
+          while true; do
+            echo "Attempt $attempt of $max_attempts: Cloning $repo_url"
+
+            # Fetch installation access token
+            INSTALLATION_TOKEN=$(fetch_installation_token "$jwt" "${{ inputs['installation-id'] }}")
+
+            # Check if the INSTALLATION_TOKEN is empty
+            if [[ -z "$INSTALLATION_TOKEN" ]]; then
+              echo "Failed to obtain a valid installation token. Attempt $attempt of $max_attempts."
+            else
+              echo "Using installation token for clone attempt."
+
+              # Attempt to clone the repository
+              if git clone https://x-access-token:${INSTALLATION_TOKEN}@${repo_url#https://} "$repo_name"; then
+                echo "Clone successful."
+                break
+              else
+                echo "Clone failed, retrying in $delay seconds..."
+              fi
+            fi
+
+            if [[ $attempt -lt $max_attempts ]]; then
+              sleep $delay
+              ((attempt++))
+              delay=$((delay * 2))  # Exponential backoff
+            else
+              echo "Clone failed after $max_attempts attempts, giving up."
+              return 1
+            fi
+          done
+        }
 
         # Setup git to use the installation token
         git config --global user.email "sp+deployment-pusher@likvido.com"
