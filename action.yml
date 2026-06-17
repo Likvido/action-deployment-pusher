@@ -67,24 +67,12 @@ runs:
         file_exists_via_api() {
             local file_path=$1
             local token=$2
-            local response_headers
-            local response_body
-            response_headers=$(mktemp)
-            response_body=$(mktemp)
             
-            response=$(curl -s -D "$response_headers" -o "$response_body" -w "%{http_code}" \
+            response=$(curl -s -o /dev/null -w "%{http_code}" \
                 -H "Authorization: token ${token}" \
                 -H "Accept: application/vnd.github.v3+json" \
                 "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${file_path}?ref=main")
             
-            echo "Github API response code: $response"
-            echo "Github API response headers:"
-            cat "$response_headers"
-            echo "Github API response body:"
-            cat "$response_body"
-
-            rm -f "$response_headers" "$response_body"
-
             [[ "$response" == "200" ]]
         }
 
